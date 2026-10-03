@@ -193,6 +193,53 @@ def generar_resultados_finales(mi_clan, rival, guerra, terminada=False):
 
     return msg.strip()
 
+def generar_podio(mi_clan, titulo="🏆 *TOP 5 MVP - {clan}* 🏆"):
+    membros = mi_clan.get("members", [])
+    atacantes = []
+    
+    for m in membros:
+        ataques = m.get("attacks", [])
+        if ataques:
+            estrellas = sum(atk.get("stars", 0) for atk in ataques)
+            destruccion = sum(atk.get("destructionPercentage", 0) for atk in ataques)
+            duracion = sum(atk.get("duration", 0) for atk in ataques) # Suma el tiempo en segundos
+            atacantes.append({
+                "nombre": m.get("name"),
+                "estrellas": estrellas,
+                "destruccion": destruccion,
+                "duracion": duracion
+            })
+            
+    if not atacantes:
+        return "🌙 Aún no hay ataques registrados para armar el podio."
+        
+    # Ordenar por: estrellas (mayor a menor), destrucción (mayor a menor), y duración (MENOR a mayor)
+    # Al poner '-x["duracion"]' logramos que el menor tiempo gane los empates
+    atacantes_ordenados = sorted(atacantes, key=lambda x: (x["estrellas"], x["destruccion"], -x["duracion"]), reverse=True)
+    
+    # Cortamos la lista para que solo sean los 5 mejores
+    top5 = atacantes_ordenados[:5]
+    
+    msg = titulo.format(clan=mi_clan.get('name').upper()) + "\n"
+    msg += "━━━━━━━━━━━━━━━━━\n\n"
+    
+    for i, atk in enumerate(top5):
+        if i == 0: medalla = "🥇"
+        elif i == 1: medalla = "🥈"
+        elif i == 2: medalla = "🥉"
+        else: medalla = "🏅"
+        
+        dest_str = f"{atk['destruccion']:.2f}%" if atk['destruccion'] % 1 != 0 else f"{int(atk['destruccion'])}%"
+        
+        # Convertimos los segundos totales a minutos y segundos
+        mins, segs = divmod(atk['duracion'], 60)
+        tiempo_str = f"{mins}m {segs}s"
+        
+        msg += f"{medalla} {atk['nombre']}\n"
+        msg += f"   ↳ {atk['estrellas']} ⭐ • {dest_str} • ⏱️ {tiempo_str}\n\n"
+
+    return msg.strip()
+
 def generar_mensaje_pendientes(guerra, es_automatico=True):
     mi_clan = guerra.get("clan", {})
     rival = guerra.get("opponent", {})
@@ -294,8 +341,14 @@ def verificar_cambios_guerra():
             ATAQUES_REGISTRADOS[m.get("tag")] = len(m.get("attacks", []))
 
     elif ESTADO_GUERRA_ANTERIOR == "inWar" and estado_actual in ["warEnded", "notInWar"]:
+        # 1. Enviar resultados finales
         msg_fin = generar_resultados_finales(mi_clan, rival, guerra, terminada=True)
         enviar_autonomo(msg_fin)
+        
+        # 2. Enviar podio automatizado del día
+        msg_podio = generar_podio(mi_clan, titulo="🏆 *TOP 5 FINAL DEL DÍA - {clan}* 🏆")
+        enviar_autonomo(msg_podio)
+        
         ATAQUES_REGISTRADOS.clear()
 
     ESTADO_GUERRA_ANTERIOR = estado_actual
@@ -407,42 +460,8 @@ def cmd_podio():
     estado = guerra.get("state")
     if estado == "notInWar": return "🌙 No hay guerra activa."
     if estado == "preparation": return "🌙 La guerra está en preparación. ¡Aún no hay ataques para el podio!"
-
-    mi_clan = guerra.get("clan", {})
-    membros = mi_clan.get("members", [])
     
-    atacantes = []
-    for m in membros:
-        ataques = m.get("attacks", [])
-        if ataques:
-            estrellas = sum(atk.get("stars", 0) for atk in ataques)
-            destruccion = sum(atk.get("destructionPercentage", 0) for atk in ataques)
-            atacantes.append({
-                "nombre": m.get("name"),
-                "estrellas": estrellas,
-                "destruccion": destruccion
-            })
-            
-    if not atacantes:
-        return "🌙 Aún no hay ataques registrados para armar el podio."
-        
-    # Ordenar por estrellas (descendente) y luego destrucción (descendente)
-    atacantes_ordenados = sorted(atacantes, key=lambda x: (x["estrellas"], x["destruccion"]), reverse=True)
-    
-    msg = f"🏆 *PODIO MVP - {mi_clan.get('name').upper()}* 🏆\n"
-    msg += "━━━━━━━━━━━━━━━━━\n\n"
-    
-    for i, atk in enumerate(atacantes_ordenados):
-        if i == 0: medalla = "🥇"
-        elif i == 1: medalla = "🥈"
-        elif i == 2: medalla = "🥉"
-        else: medalla = f"🏅"
-        
-        dest_str = f"{atk['destruccion']:.2f}%" if atk['destruccion'] % 1 != 0 else f"{int(atk['destruccion'])}%"
-        
-        msg += f"{medalla} {atk['nombre']} • {atk['estrellas']} ⭐ • {dest_str}\n"
-
-    return msg.strip()
+    return generar_podio(guerra.get("clan", {}))
 
 # ==========================================
 # 🚀 BUCLE PRINCIPAL
@@ -481,7 +500,7 @@ def procesar_mensajes():
                         elif comando == "!guerra": enviar_whatsapp(chat_id, cmd_guerra())
                         elif comando == "!resultados": enviar_whatsapp(chat_id, cmd_resultados())
                         elif comando == "!ataques": enviar_whatsapp(chat_id, cmd_ataques())
-                        elif comando == "!podio": enviar_whatsapp(chat_id, cmd_podio()) # <-- COMANDO AÑADIDO
+                        elif comando == "!podio": enviar_whatsapp(chat_id, cmd_podio())
                         elif comando == "!ip": enviar_whatsapp(chat_id, f"🌐 Mi IP local es: {requests.get('https://api.ipify.org').text}")
                         elif comando.startswith("!token "):
                             nuevo_token = texto.replace("!token ", "").strip()
