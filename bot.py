@@ -150,7 +150,7 @@ def generar_resultados_finales(mi_clan, rival, guerra, terminada=False):
 
     msg = f"{titulo}\n\n"
     msg += f"🏰 {mi_clan.get('name')} — {e_luni} ⭐ • {d_luni_str}\n"
-    msg += f"⚔️️ {rival.get('name')} — {e_rival} ⭐ • {d_rival_str}\n\n"
+    msg += f"⚔ {rival.get('name')} — {e_rival} ⭐ • {d_rival_str}\n\n"
     
     if terminada:
         ganador = "Empate 🤝"
@@ -171,7 +171,7 @@ def generar_resultados_finales(mi_clan, rival, guerra, terminada=False):
     for m in membros:
         ataques_hechos = m.get("attacks", [])
         if not ataques_hechos:
-            continue # Solo mostramos a quienes ya atacaron, para que sea acumulable
+            continue
         
         ataques_registrados = True
         msg += f"👤 #{m.get('mapPosition')} {m.get('name')}\n"
@@ -364,7 +364,6 @@ def cmd_guerra():
     
     mi_clan, rival = guerra.get("clan", {}), guerra.get("opponent", {})
     
-    # Llamamos a la función que calcula los espejos y asigna las lunas
     analisis_th = generar_analisis_th(mi_clan, rival)
     
     if estado == "preparation":
@@ -403,6 +402,48 @@ def cmd_ataques():
     if estado == "preparation": return "🌙 La guerra está en fase de *Preparación*. Todos los ataques están pendientes."
     return generar_mensaje_pendientes(guerra, es_automatico=False)
 
+def cmd_podio():
+    guerra = obtener_datos_guerra()
+    estado = guerra.get("state")
+    if estado == "notInWar": return "🌙 No hay guerra activa."
+    if estado == "preparation": return "🌙 La guerra está en preparación. ¡Aún no hay ataques para el podio!"
+
+    mi_clan = guerra.get("clan", {})
+    membros = mi_clan.get("members", [])
+    
+    atacantes = []
+    for m in membros:
+        ataques = m.get("attacks", [])
+        if ataques:
+            estrellas = sum(atk.get("stars", 0) for atk in ataques)
+            destruccion = sum(atk.get("destructionPercentage", 0) for atk in ataques)
+            atacantes.append({
+                "nombre": m.get("name"),
+                "estrellas": estrellas,
+                "destruccion": destruccion
+            })
+            
+    if not atacantes:
+        return "🌙 Aún no hay ataques registrados para armar el podio."
+        
+    # Ordenar por estrellas (descendente) y luego destrucción (descendente)
+    atacantes_ordenados = sorted(atacantes, key=lambda x: (x["estrellas"], x["destruccion"]), reverse=True)
+    
+    msg = f"🏆 *PODIO MVP - {mi_clan.get('name').upper()}* 🏆\n"
+    msg += "━━━━━━━━━━━━━━━━━\n\n"
+    
+    for i, atk in enumerate(atacantes_ordenados):
+        if i == 0: medalla = "🥇"
+        elif i == 1: medalla = "🥈"
+        elif i == 2: medalla = "🥉"
+        else: medalla = f"🏅"
+        
+        dest_str = f"{atk['destruccion']:.2f}%" if atk['destruccion'] % 1 != 0 else f"{int(atk['destruccion'])}%"
+        
+        msg += f"{medalla} {atk['nombre']} • {atk['estrellas']} ⭐ • {dest_str}\n"
+
+    return msg.strip()
+
 # ==========================================
 # 🚀 BUCLE PRINCIPAL
 # ==========================================
@@ -440,8 +481,8 @@ def procesar_mensajes():
                         elif comando == "!guerra": enviar_whatsapp(chat_id, cmd_guerra())
                         elif comando == "!resultados": enviar_whatsapp(chat_id, cmd_resultados())
                         elif comando == "!ataques": enviar_whatsapp(chat_id, cmd_ataques())
+                        elif comando == "!podio": enviar_whatsapp(chat_id, cmd_podio()) # <-- COMANDO AÑADIDO
                         elif comando == "!ip": enviar_whatsapp(chat_id, f"🌐 Mi IP local es: {requests.get('https://api.ipify.org').text}")
-                        # NUEVO COMANDO TÁCTICO PARA SUPERCELL
                         elif comando.startswith("!token "):
                             nuevo_token = texto.replace("!token ", "").strip()
                             HEADERS["Authorization"] = f"Bearer {nuevo_token}"
@@ -455,8 +496,5 @@ def procesar_mensajes():
         time.sleep(3) 
 
 if __name__ == "__main__":
-    # 1. Abre el puerto de internet falso en un hilo paralelo para calmar a Render
     threading.Thread(target=mantener_vivo, daemon=True).start()
-    
-    # 2. Inicia el escaneo del bot normalmente
     procesar_mensajes()
