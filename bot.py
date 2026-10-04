@@ -109,7 +109,7 @@ def calcular_tiempo(fecha_coc):
     except: return "Desconocido"
 
 # ==========================================
-# 📊 FUNCIONES DE FORMATO Y ESTRATEGIA (NUEVAS)
+# 📊 FUNCIONES DE FORMATO Y ESTRATEGIA
 # ==========================================
 
 def generar_analisis_th(mi_clan, rival):
@@ -157,7 +157,7 @@ def generar_rival(guerra):
     tag = rival.get("tag", "").replace("#", "")
     res = consultar_api_coc(f"clans/%23{tag}")
     
-    msg = f"🕵️‍♂️ *RADIOGRAFÍA DEL RIVAL: {rival.get('name')}* 🕵️‍♂️\n\n"
+    msg = f"🕵️‍♂️️ *RADIOGRAFÍA DEL RIVAL: {rival.get('name')}* 🕵️‍♂️\n\n"
     if res and res.status_code == 200:
         datos = res.json()
         publico = datos.get("isWarLogPublic", False)
@@ -335,7 +335,6 @@ def verificar_cambios_guerra():
     # EVENTO 1: Inicia Preparación
     if ESTADO_GUERRA_ANTERIOR != "preparation" and estado_actual == "preparation":
         enviar_autonomo(f"🔎 *¡NUEVA GUERRA ENCONTRADA!*\nLuni ha entrado en fase de preparación contra {rival.get('name')}.")
-        # AUTOMATIZACIÓN RIVAL:
         enviar_autonomo(generar_rival(guerra))
         
         ATAQUES_REGISTRADOS.clear()
@@ -357,7 +356,6 @@ def verificar_cambios_guerra():
         enviar_autonomo(generar_resultados_finales(mi_clan, rival, guerra, terminada=True))
         enviar_autonomo(generar_podio(mi_clan, titulo="🏆 *TOP 5 FINAL DEL DÍA - {clan}* 🏆"))
         
-        # AUTOMATIZACIÓN HISTORIAL (Solo en guerra normal, es decir 2 ataques)
         if guerra.get("attacksPerMember", 2) == 2:
             enviar_autonomo(generar_historial())
             
@@ -365,7 +363,7 @@ def verificar_cambios_guerra():
 
     ESTADO_GUERRA_ANTERIOR = estado_actual
 
-    # EVENTOS DURANTE LA GUERRA (Ataques y Recordatorios)
+    # EVENTOS DURANTE LA GUERRA
     if estado_actual == "inWar":
         for m in mi_clan.get("members", []):
             tag = m.get("tag")
@@ -386,7 +384,7 @@ def verificar_cambios_guerra():
                 msg_atk = (f"⚔️ NUEVO ATAQUE DE {mi_clan.get('name').upper()}\n\n"
                            f"👤 #{m.get('mapPosition')} {m.get('name')}\n"
                            f"🎯 #{defensor.get('mapPosition', '?')} {defensor.get('name', 'Desconocido')} • {stars_str} • {dest_str}\n"
-                           f"⏱️ {mins}m {segs}s")
+                           f"⏱️️ {mins}m {segs}s")
                 enviar_autonomo(msg_atk)
             
             ATAQUES_REGISTRADOS[tag] = act_len
@@ -402,10 +400,9 @@ def verificar_cambios_guerra():
                 f_obj = datetime.strptime(guerra["endTime"], "%Y%m%dT%H%M%S.%fZ").replace(tzinfo=timezone.utc)
                 restante = (f_obj - datetime.now(timezone.utc)).total_seconds()
                 
-                if 0 < restante <= 18000: # Quedan 5 horas o menos
+                if 0 < restante <= 18000:
                     if mi_clan.get('stars', 0) < max_estrellas:
                         enviar_autonomo(generar_mensaje_pendientes(guerra, es_automatico=True))
-                        # AUTOMATIZACIÓN LIMPIEZA:
                         enviar_autonomo(generar_limpieza(guerra))
                     RECORDATORIO_ENVIADO = True
             except: pass
@@ -459,7 +456,6 @@ def cmd_podio():
     if estado == "preparation": return "🌙 La guerra está en preparación. ¡Aún no hay ataques para el podio!"
     return generar_podio(guerra.get("clan", {}))
 
-# NUEVOS COMANDOS TÁCTICOS
 def cmd_limpieza():
     guerra = obtener_datos_guerra()
     if guerra.get("state") == "notInWar": return "🌙 No hay guerra activa."
@@ -512,17 +508,18 @@ def procesar_mensajes():
                         elif comando == "!resultados": enviar_whatsapp(chat_id, cmd_resultados())
                         elif comando == "!ataques": enviar_whatsapp(chat_id, cmd_ataques())
                         elif comando == "!podio": enviar_whatsapp(chat_id, cmd_podio())
-                        
-                        # NUEVOS COMANDOS TÁCTICOS
                         elif comando == "!limpieza": enviar_whatsapp(chat_id, cmd_limpieza())
                         elif comando == "!rival": enviar_whatsapp(chat_id, cmd_rival())
                         elif comando == "!historial": enviar_whatsapp(chat_id, cmd_historial())
-                        
                         elif comando == "!ip": enviar_whatsapp(chat_id, f"🌐 Mi IP local es: {requests.get('https://api.ipify.org').text}")
                         elif comando.startswith("!token "):
                             nuevo_token = texto.replace("!token ", "").strip()
                             HEADERS["Authorization"] = f"Bearer {nuevo_token}"
                             enviar_whatsapp(chat_id, "✅ Token de Supercell actualizado en caliente. Luni está listo para la guerra.")
+                        # COMANDO DE DIAGNÓSTICO AÑADIDO:
+                        elif comando == "!debug":
+                            res = requests.get(f"https://api.clashofclans.com/v1/clans/%23{TAG_CLAN}/currentwar/leaguegroup", headers=HEADERS)
+                            enviar_whatsapp(chat_id, f"📡 Diagnóstico Supercell:\nCódigo: {res.status_code}\nDetalle: {res.text[:150]}")
 
                 borrar_notificacion(receipt_id)
 
