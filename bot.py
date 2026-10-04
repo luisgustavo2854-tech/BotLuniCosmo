@@ -84,6 +84,7 @@ def obtener_datos_guerra():
 
                     if c_tag == clan_tag_hash or o_tag == clan_tag_hash:
                         guerra = normalizar_guerra(guerra, clan_tag_hash)
+                        guerra["isCWL"] = True  # <--- MARCADOR DINÁMICO DE LIGA
                         estado = guerra.get("state")
                         if estado == "inWar": return guerra
                         elif estado == "preparation" and not guerra_preparacion: guerra_preparacion = guerra
@@ -157,7 +158,7 @@ def generar_rival(guerra):
     tag = rival.get("tag", "").replace("#", "")
     res = consultar_api_coc(f"clans/%23{tag}")
     
-    msg = f"🕵️‍♂️️ *RADIOGRAFÍA DEL RIVAL: {rival.get('name')}* 🕵️‍♂️\n\n"
+    msg = f"🕵️‍♂️ *RADIOGRAFÍA DEL RIVAL: {rival.get('name')}* 🕵️‍♂️\n\n"
     if res and res.status_code == 200:
         datos = res.json()
         publico = datos.get("isWarLogPublic", False)
@@ -279,9 +280,13 @@ def generar_podio(mi_clan, titulo="🏆 *TOP 5 MVP - {clan}* 🏆"):
 def generar_mensaje_pendientes(guerra, es_automatico=True):
     mi_clan, rival = guerra.get("clan", {}), guerra.get("opponent", {})
     titulo = "⏰ *¡ATENCIÓN! ÚLTIMAS HORAS DE GUERRA* ⏰" if es_automatico else "📋 *REPORTE DE ATAQUES PENDIENTES* 📋"
-    ataques_permitidos = guerra.get("attacksPerMember", 2)
     
-    msg = f"{titulo}\n\n🏆 Pendientes\n🏟️ {'Liga de Guerras' if ataques_permitidos == 1 else 'Guerra de Clanes'}\n"
+    # === CORRECCIÓN DINÁMICA DE CWL ===
+    es_cwl = guerra.get("isCWL", False)
+    ataques_permitidos = 1 if es_cwl else guerra.get("attacksPerMember", 2)
+    tipo_guerra = "Liga de Guerras de Clanes" if es_cwl else "Guerra de Clanes"
+    
+    msg = f"{titulo}\n\n🏆 Pendientes\n🏟️ {tipo_guerra}\n"
     msg += f"⭐ Equipo: {mi_clan.get('stars', 0)} | Rival: {rival.get('stars', 0)}\n"
     msg += f"⏰ Tiempo: {calcular_tiempo(guerra.get('endTime'))}\n\n⚔️ Faltan por atacar:\n\n"
     
@@ -356,7 +361,8 @@ def verificar_cambios_guerra():
         enviar_autonomo(generar_resultados_finales(mi_clan, rival, guerra, terminada=True))
         enviar_autonomo(generar_podio(mi_clan, titulo="🏆 *TOP 5 FINAL DEL DÍA - {clan}* 🏆"))
         
-        if guerra.get("attacksPerMember", 2) == 2:
+        # EL HISTORIAL SOLO SE MUESTRA SI NO ES CWL (Guerra normal)
+        if not guerra.get("isCWL", False):
             enviar_autonomo(generar_historial())
             
         ATAQUES_REGISTRADOS.clear()
@@ -384,7 +390,7 @@ def verificar_cambios_guerra():
                 msg_atk = (f"⚔️ NUEVO ATAQUE DE {mi_clan.get('name').upper()}\n\n"
                            f"👤 #{m.get('mapPosition')} {m.get('name')}\n"
                            f"🎯 #{defensor.get('mapPosition', '?')} {defensor.get('name', 'Desconocido')} • {stars_str} • {dest_str}\n"
-                           f"⏱️️ {mins}m {segs}s")
+                           f"⏱ {mins}m {segs}s")
                 enviar_autonomo(msg_atk)
             
             ATAQUES_REGISTRADOS[tag] = act_len
@@ -516,7 +522,6 @@ def procesar_mensajes():
                             nuevo_token = texto.replace("!token ", "").strip()
                             HEADERS["Authorization"] = f"Bearer {nuevo_token}"
                             enviar_whatsapp(chat_id, "✅ Token de Supercell actualizado en caliente. Luni está listo para la guerra.")
-                        # COMANDO DE DIAGNÓSTICO AÑADIDO:
                         elif comando == "!debug":
                             res = requests.get(f"https://api.clashofclans.com/v1/clans/%23{TAG_CLAN}/currentwar/leaguegroup", headers=HEADERS)
                             enviar_whatsapp(chat_id, f"📡 Diagnóstico Supercell:\nCódigo: {res.status_code}\nDetalle: {res.text[:150]}")
