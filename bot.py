@@ -67,7 +67,9 @@ def obtener_datos_guerra():
     if res_normal and res_normal.status_code == 200:
         datos = res_normal.json()
         if datos.get("state") != "notInWar":
-            return normalizar_guerra(datos, clan_tag_hash)
+            guerra = normalizar_guerra(datos, clan_tag_hash)
+            guerra["isCWL"] = False # MARCADOR DE GUERRA NORMAL
+            return guerra
 
     res_liga = consultar_api_coc(f"clans/%23{TAG_CLAN}/currentwar/leaguegroup")
     if res_liga and res_liga.status_code == 200:
@@ -84,7 +86,7 @@ def obtener_datos_guerra():
 
                     if c_tag == clan_tag_hash or o_tag == clan_tag_hash:
                         guerra = normalizar_guerra(guerra, clan_tag_hash)
-                        guerra["isCWL"] = True  # <--- MARCADOR DINÁMICO DE LIGA
+                        guerra["isCWL"] = True  # MARCADOR DE LIGA CWL
                         estado = guerra.get("state")
                         if estado == "inWar": return guerra
                         elif estado == "preparation" and not guerra_preparacion: guerra_preparacion = guerra
@@ -281,7 +283,6 @@ def generar_mensaje_pendientes(guerra, es_automatico=True):
     mi_clan, rival = guerra.get("clan", {}), guerra.get("opponent", {})
     titulo = "⏰ *¡ATENCIÓN! ÚLTIMAS HORAS DE GUERRA* ⏰" if es_automatico else "📋 *REPORTE DE ATAQUES PENDIENTES* 📋"
     
-    # === CORRECCIÓN DINÁMICA DE CWL ===
     es_cwl = guerra.get("isCWL", False)
     ataques_permitidos = 1 if es_cwl else guerra.get("attacksPerMember", 2)
     tipo_guerra = "Liga de Guerras de Clanes" if es_cwl else "Guerra de Clanes"
@@ -419,15 +420,19 @@ def verificar_cambios_guerra():
 
 def cmd_time():
     guerra = obtener_datos_guerra()
-    if guerra.get("state") == "notInWar": return "🌙 Luni no está en guerra."
-    if guerra.get("state") == "warEnded": return "🌙 La guerra terminó."
-    fase = "⏳ La guerra *COMIENZA* en:" if guerra.get("state") == "preparation" else "⏰ La guerra *TERMINA* en:"
+    if guerra.get("state") == "notInWar": return "🌙 Luni no está en guerra ni en liga."
+    if guerra.get("state") == "warEnded": return "🌙 La batalla terminó."
+    fase = "⏳ La batalla *COMIENZA* en:" if guerra.get("state") == "preparation" else "⏰ La batalla *TERMINA* en:"
     return f"⏳ *REPORTE DE TIEMPO* ⏳\n\n⚔️ *{guerra.get('clan', {}).get('name')}* vs *{guerra.get('opponent', {}).get('name')}*\n\n{fase} {calcular_tiempo(guerra.get('startTime' if guerra.get('state') == 'preparation' else 'endTime'))}"
 
 def cmd_guerra():
     guerra = obtener_datos_guerra()
     estado = guerra.get("state")
     if estado == "notInWar": return "🌙 No hay guerra activa."
+    
+    # === REDIRECCIÓN INTELIGENTE SI ES CWL ===
+    if guerra.get("isCWL", False):
+        return "🏆 Luni se encuentra disputando la Liga de Guerras de Clanes (CWL). Usa el comando *!cwl* para ver el estado."
     
     mi_clan, rival = guerra.get("clan", {}), guerra.get("opponent", {})
     analisis_th = generar_analisis_th(mi_clan, rival)
@@ -441,31 +446,52 @@ def cmd_guerra():
            f"🆚\n🏰 *{rival.get('name')}*: {rival.get('stars', 0)} ⭐ ({rival.get('destructionPercentage', 0):.2f}%)\n"
            f"────────────────\n✨ Balance de Ayuntamientos (TH)\n\n{analisis_th}\n\n⚔️ Usa !resultados para ver el detalle.")
 
+def cmd_cwl():
+    guerra = obtener_datos_guerra()
+    estado = guerra.get("state")
+    if estado == "notInWar": return "🌙 No hay Liga activa."
+    
+    # === REDIRECCIÓN INTELIGENTE SI ES GUERRA NORMAL ===
+    if not guerra.get("isCWL", False):
+        return "⚔️ Luni se encuentra en una Guerra de Clanes normal. Usa el comando *!guerra* para ver el estado."
+    
+    mi_clan, rival = guerra.get("clan", {}), guerra.get("opponent", {})
+    analisis_th = generar_analisis_th(mi_clan, rival)
+    
+    if estado == "preparation":
+        return (f"⏳ *PREPARACIÓN DE LIGA (CWL)* ⏳\n\n🏆 *{mi_clan.get('name')}* vs *{rival.get('name')}*\n\n"
+               f"⏳ La batalla *COMIENZA* en: *{calcular_tiempo(guerra.get('startTime'))}*\n────────────────\n"
+               f"✨ Balance de Ayuntamientos (TH)\n\n{analisis_th}\n\n¡Preparen sus aldeas!")
+    
+    return (f"🏆 *ESTADO DE LA LIGA (CWL)* 🏆\n\n🏰 *{mi_clan.get('name')}*: {mi_clan.get('stars', 0)} ⭐ ({mi_clan.get('destructionPercentage', 0):.2f}%)\n"
+           f"🆚\n🏰 *{rival.get('name')}*: {rival.get('stars', 0)} ⭐ ({rival.get('destructionPercentage', 0):.2f}%)\n"
+           f"────────────────\n✨ Balance de Ayuntamientos (TH)\n\n{analisis_th}\n\n⚔️ Usa !resultados para ver el detalle.")
+
 def cmd_resultados():
     guerra = obtener_datos_guerra()
     estado = guerra.get("state")
     if estado == "notInWar": return "🌙 No hay guerra activa."
-    if estado == "preparation": return "🌙 La guerra está en fase de *Preparación*. Aún no hay ataques."
+    if estado == "preparation": return "🌙 La batalla está en fase de *Preparación*. Aún no hay ataques."
     return generar_resultados_finales(guerra.get("clan", {}), guerra.get("opponent", {}), guerra, terminada=False)
 
 def cmd_ataques():
     guerra = obtener_datos_guerra()
     estado = guerra.get("state")
     if estado == "notInWar": return "🌙 No hay guerra activa."
-    if estado == "preparation": return "🌙 La guerra está en fase de *Preparación*. Todos los ataques están pendientes."
+    if estado == "preparation": return "🌙 La batalla está en fase de *Preparación*. Todos los ataques están pendientes."
     return generar_mensaje_pendientes(guerra, es_automatico=False)
 
 def cmd_podio():
     guerra = obtener_datos_guerra()
     estado = guerra.get("state")
     if estado == "notInWar": return "🌙 No hay guerra activa."
-    if estado == "preparation": return "🌙 La guerra está en preparación. ¡Aún no hay ataques para el podio!"
+    if estado == "preparation": return "🌙 La batalla está en preparación. ¡Aún no hay ataques para el podio!"
     return generar_podio(guerra.get("clan", {}))
 
 def cmd_limpieza():
     guerra = obtener_datos_guerra()
     if guerra.get("state") == "notInWar": return "🌙 No hay guerra activa."
-    if guerra.get("state") == "preparation": return "🌙 La guerra aún no comienza."
+    if guerra.get("state") == "preparation": return "🌙 La batalla aún no comienza."
     return generar_limpieza(guerra)
 
 def cmd_rival():
@@ -511,6 +537,7 @@ def procesar_mensajes():
                         print(f"➤ Comando leído: {comando}")
                         if comando in ["!time", "!tiempo"]: enviar_whatsapp(chat_id, cmd_time())
                         elif comando == "!guerra": enviar_whatsapp(chat_id, cmd_guerra())
+                        elif comando == "!cwl": enviar_whatsapp(chat_id, cmd_cwl()) # <--- NUEVO COMANDO
                         elif comando == "!resultados": enviar_whatsapp(chat_id, cmd_resultados())
                         elif comando == "!ataques": enviar_whatsapp(chat_id, cmd_ataques())
                         elif comando == "!podio": enviar_whatsapp(chat_id, cmd_podio())
